@@ -1,0 +1,6 @@
+{
+  "https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.9.16/dist/": { "integrity": "sha512-qkResg8+2c2FnFI1Dn/TIgr5wZKnkss3MgNr1DAJU0Bvj7x4Vb9Zpqxr5tEMmgDXjGj9/w6MZkXySsUzcVb9/g==", "contentType": "text/html; charset=utf-8" },
+  "https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.9.16/dist/main.js": { "integrity": "sha512-qHM1GJfGbZz+wA69a92PJEG9c74irCh0/orrO8YJLBifxDlNRE8lMRV9Zu6joEFPGich6Br0pXiSSIRPY2ORfQ==", "contentType": "application/javascript; charset=utf-8" },
+  "https://cdn.jsdelivr.net/npm/@undecaf/zbar-wasm@0.9.16/dist/zbar.wasm": { "integrity": "sha512-SWAt0YBYl9UtiI3Dw30kTImAt87030SCigkGgShStbCMjvcDaIB09T8qGUtP5q2lCzx4GR24AbPtI8UoMaYLAQ==", "contentType": "application/wasm" },
+  "version": 1
+}
