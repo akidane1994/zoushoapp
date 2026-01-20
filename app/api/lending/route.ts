@@ -3,6 +3,8 @@ import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import { v4 as uuidv4 } from 'uuid';
 import { sendStatusCode } from 'next/dist/server/api-utils';
+import { getServerSession } from 'next-auth';
+import { authOptions } from "@/lib/authOptions";
 
 // --- 環境設定 ---
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
@@ -113,11 +115,21 @@ async function sendSlackNotification(params: {
  */
 export async function POST(req: NextRequest) {
   try {
+
+    // セッションからユーザー情報を取得
+    const session = await getServerSession(authOptions);
+    const userEmail = session?.user?.email;
+    const userName = session?.user?.name;
+    if (!userEmail) {
+      console.error("Session missing email. Session content:", session);
+      return NextResponse.json({error: '認証情報が取得できませんでした'}, {status: 401 });
+    }
+
     const body = await req.json();
-    const { isbn, title, borrowerName, borrowerGroup } = body;
+    const { isbn, title, borrowerGroup } = body;
 
     // バリデーション
-    if (!isbn || !borrowerName || !borrowerGroup) {
+    if (!isbn || !borrowerGroup) {
       return NextResponse.json({ error: '必須項目(ISBN, 氏名, グループ)が不足しています' }, { status: 400 });
     }
 
@@ -138,17 +150,19 @@ export async function POST(req: NextRequest) {
       title: title || 'タイトル不明', // タイトルは任意（なくてもエラーにしない）
       borrowedAt: getJstDateString(today),
       dueAt: getJstDateString(twoWeeksLater),
-      borrowerName: borrowerName,
+      borrowerName: userName || '氏名不明',
+      borrowerEmail: userEmail,
       borrowerGroup: borrowerGroup,
       returnedAt: '', // 貸出時は空欄
     };
 
+    // スプレッドシートへ保存
     await sheet.addRow(newRow);
 
     // Slackへ通知
     await sendSlackNotification({
       title: title || 'タイトル不明',
-      borrowerName,
+      borrowerName: userName || '氏名不明',
       borrowedAt,
       dueAt
     });

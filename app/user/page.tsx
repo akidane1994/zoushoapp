@@ -26,11 +26,10 @@ export default function UserPage() {
   const [mode, setMode] = useState<Mode>(null);
   const [step, setStep] = useState<Step>('select');
   const [book, setBook] = useState<BookInfo | null>(null);
-  
+
   // フォーム用State
-  const [borrowerName, setBorrowerName] = useState('');
   const [borrowerGroup, setBorrowerGroup] = useState('');
-  
+
   // UI用State
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -78,8 +77,8 @@ export default function UserPage() {
     if (!book || !mode) return;
     
     // 貸出モードでのバリデーション
-    if (mode === 'borrow' && (!borrowerName || !borrowerGroup)) {
-      setError('お名前と所属グループを入力してください');
+    if (mode === 'borrow' && (!borrowerGroup)) {
+      setError('所属グループを入力してください');
       return;
     }
 
@@ -94,7 +93,6 @@ export default function UserPage() {
       const body = mode === 'borrow' ? {
         isbn: book.isbn,
         title: book.title,
-        borrowerName,
         borrowerGroup
       } : {
         isbn: book.isbn
@@ -125,7 +123,6 @@ export default function UserPage() {
     setMode(null);
     setStep('select');
     setBook(null);
-    setBorrowerName('');
     setBorrowerGroup('');
     setMessage('');
     setError('');
@@ -211,16 +208,6 @@ export default function UserPage() {
             {/* 貸出時のみ表示するフォーム */}
             {mode === 'borrow' && (
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">お名前</label>
-                  <input
-                    type="text"
-                    value={borrowerName}
-                    onChange={(e) => setBorrowerName(e.target.value)}
-                    className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="例: 山田 太郎"
-                  />
-                </div>
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-1">所属グループ</label>
                   <input
