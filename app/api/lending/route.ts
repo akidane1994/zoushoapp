@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import { v4 as uuidv4 } from 'uuid';
+import { sendStatusCode } from 'next/dist/server/api-utils';
 
 // --- 環境設定 ---
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const CLIENT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
 const PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
 
 // --- ヘルパー関数: 日本時間のYYYY-MM-DDを取得 ---
 const getJstDateString = (date: Date = new Date()): string => {
@@ -41,6 +43,71 @@ async function getSheet() {
   return sheet;
 }
 
+// Slack通知送信関数
+async function sendSlackNotification(params: {
+  title: string;
+  borrowerName: string;
+  borrowedAt: string;
+  dueAt: string;
+}) {
+  if (!SLACK_WEBHOOK_URL) return; // URL未設定なら何もしない
+
+  try {
+    const payload = {
+      text: `📚 *本の貸出がありました*`, // 通知のフォールバックテキスト
+      blocks: [
+        {
+          type: "header",
+          text: {
+            type: "plain_text",
+            text: "📚 本の貸出がありました",
+            emoji: true
+          }
+        },
+        {
+          type: "section",
+          fields: [
+            {
+              type: "mrkdwn",
+              text: `*利用者:*\n${params.borrowerName}`
+            },
+            {
+              type: "mrkdwn",
+              text: `*書籍タイトル:*\n${params.title}`
+            },
+            {
+              type: "mrkdwn",
+              text: `*貸出日:*\n${params.borrowedAt}`
+            },
+            {
+              type: "mrkdwn",
+              text: `*返却予定日:*\n${params.dueAt}`
+            }
+          ]
+        },
+        {
+          type: "context",
+          elements: [
+            {
+              type: "mrkdwn",
+              text: "※返却期限を守りましょう"
+            }
+          ]
+        }
+      ]
+    };
+
+    await fetch(SLACK_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    console.error('Slack Notification Error:', error);
+    // Slack通知失敗で処理全体をエラーにする必要はないので、ログだけ残す
+  }
+}
+
 /**
  * 貸出処理 (POST)
  */
@@ -61,6 +128,9 @@ export async function POST(req: NextRequest) {
     const twoWeeksLater = new Date();
     twoWeeksLater.setDate(today.getDate() + 14);
 
+    const borrowedAt = getJstDateString(today);
+    const dueAt = getJstDateString(twoWeeksLater);
+
     // 新しい行を追加
     const newRow = {
       id: uuidv4(),
@@ -74,6 +144,14 @@ export async function POST(req: NextRequest) {
     };
 
     await sheet.addRow(newRow);
+
+    // Slackへ通知
+    await sendSlackNotification({
+      title: title || 'タイトル不明',
+      borrowerName,
+      borrowedAt,
+      dueAt
+    });
 
     return NextResponse.json({ message: '貸出処理が完了しました', data: newRow });
 
