@@ -2,7 +2,9 @@
 
 import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
-import { signOut } from 'next-auth/react';
+import { signOut, useSession } from 'next-auth/react';
+import { Book } from 'lucide-react'
+import Link from 'next/link';
 
 // --- スキャナーの動的インポート (SSR対策) ---
 const BarcodeScanner = dynamic(() => import('../../components/BarcodeScanner'), {
@@ -23,6 +25,7 @@ type BookInfo = {
 
 export default function UserPage() {
   // --- State管理 ---
+  const {data: session} = useSession();
   const [mode, setMode] = useState<Mode>(null);
   const [step, setStep] = useState<Step>('select');
   const [book, setBook] = useState<BookInfo | null>(null);
@@ -134,12 +137,17 @@ export default function UserPage() {
       {/* ヘッダー */}
       <header className="bg-white shadow p-4 flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-700">図書貸出・返却</h1>
-        <button
-          onClick={() => signOut({ callbackUrl: '/login' })}
-          className="bg-gray-100 text-gray-600 px-3 py-1 rounded text-xs font-bold hover:bg-gray-200 transition"
-          >
-            ログアウト
-        </button>
+        <div className='flex items-center gap-3'>
+          {session?.user?.name && (
+            <span className='text-xs text-gray-500 hidden sm:inline'>{session.user.name}</span>
+          )}
+          <button
+            onClick={() => signOut({ callbackUrl: '/login' })}
+            className="bg-gray-100 text-gray-600 px-3 py-1 rounded text-xs font-bold hover:bg-gray-200 transition"
+            >
+              ログアウト
+          </button>
+        </div>
       </header>
 
       <main className="p-4 max-w-md mx-auto">
@@ -162,6 +170,13 @@ export default function UserPage() {
               <span className="text-2xl font-bold">本を返す</span>
               <span className="text-sm opacity-90">Return a Book</span>
             </button>
+
+            <Link
+              href="/books"
+              className="bg-white border border-gray-200 text-gray-700 p-6 rounded-xl shadow-sm hover:bg-gray-50 hover:shadow-md transition flex items-center justify-center gap-3 mt-2">
+                <Book className='w-6 h-6 text-gray-500'/>
+                <span className='font-bold'>蔵書一覧を見る</span>
+            </Link>
           </div>
         )}
 
@@ -208,6 +223,18 @@ export default function UserPage() {
             {/* 貸出時のみ表示するフォーム */}
             {mode === 'borrow' && (
               <div className="space-y-4">
+                <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
+                    <p className="text-xs font-bold text-blue-600 mb-1 uppercase tracking-wider">借りるアカウント</p>
+                    <div className="flex flex-col">
+                        <span className="font-bold text-lg text-gray-800">
+                            {session?.user?.name || '名前が取得できません'}
+                        </span>
+                        <span className="text-sm text-gray-500">
+                            {session?.user?.email}
+                        </span>
+                    </div>
+                </div>
+
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-1">所属グループ</label>
                   <input
