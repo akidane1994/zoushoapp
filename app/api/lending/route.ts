@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 import { v4 as uuidv4 } from 'uuid';
-import { sendStatusCode } from 'next/dist/server/api-utils';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 
 // --- 環境設定 ---
@@ -12,17 +11,17 @@ const CLIENT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
 const PRIVATE_KEY = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
 
-// --- ヘルパー関数: 日本時間のYYYY-MM-DDを取得 ---
+// --- ヘルパー関数: JST日付 ---
 const getJstDateString = (date: Date = new Date()): string => {
   return new Intl.DateTimeFormat('ja-JP', {
     timeZone: 'Asia/Tokyo',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(date).replace(/\//g, '-'); // 2024/01/01 -> 2024-01-01
+  }).format(date).replace(/\//g, '-');
 };
 
-// --- ヘルパー関数: スプレッドシート接続 ---
+// --- ヘルパー関数: シート取得 ---
 async function getSheet() {
   if (!SHEET_ID || !CLIENT_EMAIL || !PRIVATE_KEY) {
     throw new Error('環境変数が設定されていません');
@@ -36,66 +35,75 @@ async function getSheet() {
 
   const doc = new GoogleSpreadsheet(SHEET_ID, serviceAccountAuth);
   await doc.loadInfo();
-  
-  // 'transactions' という名前のシートを取得
+
   const sheet = doc.sheetsByTitle['transactions'];
-  if (!sheet) {
-    throw new Error('transactions シートが見つかりません');
-  }
+  if (!sheet) throw new Error('transactions シートが見つかりません');
   return sheet;
 }
 
-// Slack通知送信関数
-async function sendSlackNotification(params: {
-  title: string;
-  borrowerName: string;
-  borrowedAt: string;
-  dueAt: string;
-}) {
-  if (!SLACK_WEBHOOK_URL) return; // URL未設定なら何もしない
+// --- ★修正: Slack通知送信関数 (貸出・返却兼用) ---
+type NotificationType = 'borrow' | 'return';
+
+async function sendSlackNotification(
+  type: NotificationType,
+  params: {
+    title: string;
+    borrowerName: string;
+    date: string;       // 貸出日 or 返却日
+    dueAt?: string;     // 返却予定日 (貸出時のみ使用)
+  }
+) {
+  if (!SLACK_WEBHOOK_URL) return;
+
+  // タイプに応じて文言と色を切り替え
+  const isBorrow = type === 'borrow';
+  const headerText = isBorrow ? "📚 本の貸出がありました" : "↩️ 本が返却されました";
+  const color = isBorrow ? "#36a64f" : "#2eb886"; // 緑系で少し色味を変える（任意）
 
   try {
+    const fields = [
+      {
+        type: "mrkdwn",
+        text: `*利用者:*\n${params.borrowerName}`
+      },
+      {
+        type: "mrkdwn",
+        text: `*書籍タイトル:*\n${params.title}`
+      }
+    ];
+
+    // 日付フィールドの追加
+    if (isBorrow) {
+      fields.push(
+        { type: "mrkdwn", text: `*貸出日:*\n${params.date}` },
+        { type: "mrkdwn", text: `*返却予定日:*\n${params.dueAt}` }
+      );
+    } else {
+      fields.push(
+        { type: "mrkdwn", text: `*返却日:*\n${params.date}` }
+      );
+    }
+
     const payload = {
-      text: `📚 *本の貸出がありました*`, // 通知のフォールバックテキスト
+      text: headerText, // 通知のプレビューテキスト
       blocks: [
         {
           type: "header",
           text: {
             type: "plain_text",
-            text: "📚 本の貸出がありました",
+            text: headerText,
             emoji: true
           }
         },
         {
           type: "section",
-          fields: [
-            {
-              type: "mrkdwn",
-              text: `*利用者:*\n${params.borrowerName}`
-            },
-            {
-              type: "mrkdwn",
-              text: `*書籍タイトル:*\n${params.title}`
-            },
-            {
-              type: "mrkdwn",
-              text: `*貸出日:*\n${params.borrowedAt}`
-            },
-            {
-              type: "mrkdwn",
-              text: `*返却予定日:*\n${params.dueAt}`
-            }
-          ]
+          fields: fields
         },
-        {
+        // 貸出時のみ注意書きを表示
+        ...(isBorrow ? [{
           type: "context",
-          elements: [
-            {
-              type: "mrkdwn",
-              text: "※返却期限を守りましょう"
-            }
-          ]
-        }
+          elements: [{ type: "mrkdwn", text: "※返却期限を確認してください" }]
+        }] : [])
       ]
     };
 
@@ -106,7 +114,6 @@ async function sendSlackNotification(params: {
     });
   } catch (error) {
     console.error('Slack Notification Error:', error);
-    // Slack通知失敗で処理全体をエラーにする必要はないので、ログだけ残す
   }
 }
 
@@ -115,27 +122,23 @@ async function sendSlackNotification(params: {
  */
 export async function POST(req: NextRequest) {
   try {
-
-    // セッションからユーザー情報を取得
     const session = await getServerSession(authOptions);
     const userEmail = session?.user?.email;
     const userName = session?.user?.name;
+
     if (!userEmail) {
-      console.error("Session missing email. Session content:", session);
-      return NextResponse.json({error: '認証情報が取得できませんでした'}, {status: 401 });
+      return NextResponse.json({ error: '認証情報が取得できませんでした' }, { status: 401 });
     }
 
     const body = await req.json();
     const { isbn, title, borrowerGroup } = body;
 
-    // バリデーション
     if (!isbn || !borrowerGroup) {
-      return NextResponse.json({ error: '必須項目(ISBN, 氏名, グループ)が不足しています' }, { status: 400 });
+      return NextResponse.json({ error: '必須項目不足' }, { status: 400 });
     }
 
     const sheet = await getSheet();
 
-    // 日付計算 (JST)
     const today = new Date();
     const twoWeeksLater = new Date();
     twoWeeksLater.setDate(today.getDate() + 14);
@@ -143,28 +146,26 @@ export async function POST(req: NextRequest) {
     const borrowedAt = getJstDateString(today);
     const dueAt = getJstDateString(twoWeeksLater);
 
-    // 新しい行を追加
     const newRow = {
       id: uuidv4(),
       isbn: isbn,
-      title: title || 'タイトル不明', // タイトルは任意（なくてもエラーにしない）
-      borrowedAt: getJstDateString(today),
-      dueAt: getJstDateString(twoWeeksLater),
+      title: title || 'タイトル不明',
+      borrowedAt: borrowedAt,
+      dueAt: dueAt,
       borrowerName: userName || '氏名不明',
       borrowerEmail: userEmail,
       borrowerGroup: borrowerGroup,
-      returnedAt: '', // 貸出時は空欄
+      returnedAt: '',
     };
 
-    // スプレッドシートへ保存
     await sheet.addRow(newRow);
 
-    // Slackへ通知
-    await sendSlackNotification({
+    // ★修正: Slack通知 (引数変更に対応)
+    await sendSlackNotification('borrow', {
       title: title || 'タイトル不明',
       borrowerName: userName || '氏名不明',
-      borrowedAt,
-      dueAt
+      date: borrowedAt,
+      dueAt: dueAt
     });
 
     return NextResponse.json({ message: '貸出処理が完了しました', data: newRow });
@@ -190,8 +191,7 @@ export async function PUT(req: NextRequest) {
     const sheet = await getSheet();
     const rows = await sheet.getRows();
 
-    // 「該当するISBN」かつ「まだ返却されていない(returnedAtが空)」行を探す
-    // ※複数ある場合は、リストの最後（最新）のものを対象とする運用とします
+    // 該当する貸出中の行を探す
     const targetRow = rows.reverse().find((row) => {
         return row.get('isbn') === isbn && !row.get('returnedAt');
     });
@@ -200,16 +200,29 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'この本は現在貸し出されていません' }, { status: 404 });
     }
 
-    // 返却日を書き込む
     const today = new Date();
-    targetRow.assign({ returnedAt: getJstDateString(today) });
+    const returnedAt = getJstDateString(today);
+
+    // 返却日を書き込む
+    targetRow.assign({ returnedAt: returnedAt });
     await targetRow.save();
+
+    // ★追加: 返却通知を送信
+    // 行データからタイトルと借りた人の名前を取得
+    const bookTitle = targetRow.get('title') || 'タイトル不明';
+    const borrowerName = targetRow.get('borrowerName') || '氏名不明';
+
+    await sendSlackNotification('return', {
+      title: bookTitle,
+      borrowerName: borrowerName,
+      date: returnedAt
+    });
 
     return NextResponse.json({ 
         message: '返却処理が完了しました', 
         data: {
-            title: targetRow.get('title'),
-            borrower: targetRow.get('borrowerName')
+            title: bookTitle,
+            borrower: borrowerName
         }
     });
 
