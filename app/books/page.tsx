@@ -58,7 +58,8 @@ export default function BookListPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-800 pb-10">
-      
+
+    <div className='sticky top-0 z-10 bg-gray-50'>
       {/* ヘッダー */}
       <header className="bg-white shadow sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
@@ -76,11 +77,9 @@ export default function BookListPage() {
           </span>
         </div>
       </header>
-
-      <main className="max-w-4xl mx-auto px-4 mt-6 space-y-6">
-        
-        {/* 検索バー */}
-        <div className="relative">
+      {/* 検索バー */}
+      <div className='max-w-4xl mx-auto px-4 py-4'>
+       <div className="relative">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search className="h-5 w-5 text-gray-400" />
           </div>
@@ -91,8 +90,11 @@ export default function BookListPage() {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
-        </div>
+       </div>
+      </div>
+    </div>
 
+      <main className="max-w-4xl mx-auto px-4 space-y-6">
         {/* ローディング表示 */}
         {loading && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
