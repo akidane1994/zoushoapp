@@ -5,22 +5,38 @@
   --foreground: #171717;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+@theme {
+   /* 地・面・文字 */
+   --color-paper: #F4F1EA;        /* 和紙（背景） */
+   --color-surface: #FFFDF9;      /* 生成り（カード面） */
+   --color-ink: #23211C;          /* 墨（文字・サイドバー） */
+   --color-ink-soft: #5C564B;     /* やや薄い本文 */
+   --color-muted: #948D80;        /* 補助テキスト */
+   --color-line: #E4DFD3;         /* 罫線・境界 */
+ 
+   /* アクセント（青柳＝柳色） */
+   --color-aoyagi: #3D5A4A;       /* 主役・プライマリ */
+   --color-aoyagi-dark: #2E4638;  /* ホバー */
+   --color-leaf: #7E9A86;         /* 差し色 */
+   --color-leaf-soft: #EAF0EC;    /* アクセント淡色（タグ等） */
+ 
+   /* 状態色（絵文字をやめ色面で表現） */
+   --color-yamabuki: #B07A3C;     /* 貸出中 */
+   --color-yamabuki-soft: #F2E8D6;
+ 
+   /* タイポgr   フォントは layout.tsx の next/font で読み込み */
+   --font-sans: var(--font-noto-sans-jp);
+   --font-mincho: var(--font-shippori);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+:root { color-scheme: light; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
 }
+
+/* スクロールバーを控えめに（任意） */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #D8D2C5; border-radius: 6px; }

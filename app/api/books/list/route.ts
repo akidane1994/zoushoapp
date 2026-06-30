@@ -71,6 +71,8 @@ export async function GET() {
         title: row.get('title'),
         authors: row.get('authors'), // カンマ区切り文字列のまま返すか、配列にするかはフロントで調整可
         thumbnailUrl: row.get('image'),
+        genre: row.get('genre'), // ジャンル
+        publisher: row.get('publisher'), // 出版社
         // ステータス判定
         status: lendingInfo ? 'lent' : 'available', 
         // 貸出中なら詳細情報を付与

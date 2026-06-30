@@ -10,8 +10,11 @@ type BookData = {
     title: string;
     authors: string[];
     publishedDate: string;
+    genre?: string;
+    publisher?: string;
     thumbnailUrl: string;
     source: 'GoogleBooks' | 'OpenBD' | 'Inventory';
+    duplicate?: boolean; // ★ 追加：登録済みかどうか（重複警告用）
 };
 
 // ---設定値---
@@ -39,7 +42,7 @@ async function fetchFromInventory(isbn: string): Promise<BookData | null> {
 
     const doc = new GoogleSpreadsheet(SHEET_ID, serviceAccountAuth);
     await doc.loadInfo();
-    
+
     // 蔵書リストは1枚目のシートにある前提
     const sheet = doc.sheetsByIndex[0];
     const rows = await sheet.getRows();
@@ -117,6 +120,8 @@ async function fetchFromGoogleBooks(isbn: string): Promise<BookData | null> {
             isbn: isbn,
             title: volumeInfo.title || 'タイトル不明',
             authors: volumeInfo.authors || ['著者不明'],
+            publisher: volumeInfo.publisher || '',  // ★ 追加
+            genre: (volumeInfo.categories && volumeInfo.categories[0]) || '', // ★ 追加（候補。フォームで上書き可）
             publishedDate: volumeInfo.publishedDate || '',
             thumbnailUrl: volumeInfo.imageLinks?.thumbnail || '',
             source: 'GoogleBooks',
@@ -145,6 +150,8 @@ async function fetchFromOpenBD(isbn: string): Promise<BookData | null> {
         isbn: isbn,
         title: summary.title || 'タイトル不明',
         authors: summary.author ? summary.author.split(' ') : ['著者不明'], // OpenBDはスペース区切りの文字列で来ることが多い
+        publisher: summary.publisher || '',   // ★ 追加
+        genre: '', // OpenBDはカテゴリを持たないため空（フォームで選択）
         publishedDate: summary.pubdate || '',
         thumbnailUrl: summary.cover || '',
         source: 'OpenBD',
@@ -178,21 +185,25 @@ async function fetchFromOpenBD(isbn: string): Promise<BookData | null> {
           return NextResponse.json({ error: 'この本は蔵書登録されていません' }, { status: 404 });
       }
     }
-  
+
     // 1. Google Books API を試行
     let bookData = await fetchFromGoogleBooks(isbn);
-  
+
     // 2. 失敗したら OpenBD を試行 (フォールバック)
     if (!bookData) {
       console.log(`Google Books failed for ${isbn}, trying OpenBD...`);
       bookData = await fetchFromOpenBD(isbn);
     }
-  
+
     // 3. 両方ダメだった場合
     if (!bookData) {
       return NextResponse.json({ error: 'Book not found' }, { status: 404 });
     }
-  
+
+    // ★ 追加：既に蔵書登録されているか確認して duplicate を付与
+    const existing = await fetchFromInventory(isbn);
+    bookData.duplicate = !!existing;
+
     // 4. 成功レスポンス
     return NextResponse.json(bookData);
   }

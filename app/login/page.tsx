@@ -14,7 +14,7 @@ export default function LoginPage() {
     // Googleログインを実行
     // callbackUrl: ログイン成功後に飛ばすページを指定
     await signIn('google', { 
-      callbackUrl: role === 'admin' ? '/admin' : '/user' 
+      callbackUrl: role === 'admin' ? '/admin' : '/dashboard' 
     });
   };
 

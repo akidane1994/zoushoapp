@@ -1,185 +1,250 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
-import dynamic from 'next/dynamic';
-import { signOut } from 'next-auth/react';
+import { useState, useCallback } from "react";
+import dynamic from "next/dynamic";
+import AppShell from "@/components/AppShell";
+import BookCover from "@/components/BookCover";
 
-// ★重要: ScannerをSSRなしで動的にインポート
-const BarcodeScanner = dynamic(() => import('../../components/BarcodeScanner'), {
+const BarcodeScanner = dynamic(
+  () => import("../../components/BarcodeScanner"),
+  {
     ssr: false,
-    loading: () => <div className="bg-gray-200 h-64 rounded-lg flex items-center justify-center">カメラ準備中...</div>
-  });
+    loading: () => (
+      <div className="h-[236px] rounded-2xl bg-ink/90 grid place-items-center text-paper/70">
+        カメラ準備中...
+      </div>
+    ),
+  }
+);
 
-// --- 型定義 ---
 type BookData = {
   isbn: string;
   title: string;
   authors: string[];
   publishedDate: string;
+  publisher?: string;
   thumbnailUrl: string;
-  source: 'GoogleBooks' | 'OpenBD';
+  source: "GoogleBooks" | "OpenBD";
+  duplicate?: boolean; // ← /api/books が重複判定を返す場合に表示
 };
 
+const GENRES = ["技術", "ビジネス", "教養", "デザイン", "自己啓発", "その他"];
+
 export default function AdminPage() {
-  // --- State管理 ---
-  const [isbn, setIsbn] = useState<string>('');
+  const [isbn, setIsbn] = useState("");
   const [book, setBook] = useState<BookData | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
-  const [isCameraActive, setIsCameraActive] = useState<boolean>(false); // 初期値falseに変更
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [scan, setScan] = useState(false);
+  const [genre, setGenre] = useState("技術");
+  const [tags, setTags] = useState<string[]>([]);
 
-  // --- 2. API呼び出し処理 (前回と同じ) ---
-  const fetchBookData = useCallback(async (searchIsbn: string) => {
-    if (!searchIsbn) return;
-    
+  const fetchBook = useCallback(async (code: string) => {
+    if (!code) return;
     setLoading(true);
-    setError('');
+    setError("");
     setBook(null);
-
     try {
-      const res = await fetch(`/api/books?isbn=${searchIsbn}`);
-      if (!res.ok) {
-        throw new Error('書籍が見つかりませんでした');
-      }
-      const data: BookData = await res.json();
-      setBook(data);
-
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '予期せぬエラーが発生しました');
-      // エラー時もカメラは止めない（再トライさせるため）
+      const res = await fetch(`/api/books?isbn=${code}`);
+      if (!res.ok) throw new Error("書籍が見つかりませんでした");
+      setBook(await res.json());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "予期せぬエラーが発生しました");
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // 検出時のハンドラ
-  const handleDetected = (code: string) => {
-    if (loading) return;
-
-    setIsbn(code);
-    setIsCameraActive(false); // スキャン完了したらカメラを閉じる
-    fetchBookData(code);
-  };
-
-  // --- 登録処理 (Backend連携) ---
-  const handleRegister = async () => {
+  const register = async () => {
     if (!book) return;
     if (!confirm(`「${book.title}」を登録しますか？`)) return;
-
-    setLoading(true);
     try {
-      const res = await fetch('/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(book),
+      const res = await fetch("/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...book, genre, tags }), // ← genre / tags を追加送信
       });
-      const data = await res.json();
-
-      if (!res.ok) throw new Error(data.error || '登録失敗');
-
-      alert('登録完了！');
-      // 次のためにリセット
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "登録に失敗しました");
+      }
+      alert("登録しました");
       setBook(null);
-      setIsbn('');
-      // カメラ再起動したければここで startCamera()
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'エラー');
-    } finally {
-      setLoading(false);
+      setIsbn("");
+      setTags([]);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "エラー");
     }
   };
 
-  // 手動検索用
-  const handleManualSearch = (e: React.FormEvent) => {
+  const addTag = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter") return;
     e.preventDefault();
-    fetchBookData(isbn);
+    const el = e.target as HTMLInputElement;
+    const v = el.value.trim();
+    if (v && !tags.includes(v)) setTags((t) => [...t, v]);
+    el.value = "";
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 font-sans text-gray-800">
-      <header className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-blue-600">蔵書登録（Admin）</h1>
-          <p className='text-xs text-gray-500'>管理者専用ページ</p>
-        </div>
-        <button
-          onClick={() => signOut({ callbackUrl: '/login'})}
-          className='text-sm text-gray-500 hover:text-red-600 underline decoration-dotted'
-          >
-            ログアウト
-        </button>
-      </header>
-
-      <div className="max-w-md mx-auto space-y-4">
-
-        {/* --- カメラエリア --- */}
-        {!isCameraActive ? (
-            <div className="bg-gray-200 h-48 rounded-lg flex flex-col items-center justify-center text-gray-500">
-                 <p className="mb-2">カメラ停止中</p>
-                <button
-                    onClick={() => setIsCameraActive(true)}
-                    className="bg-blue-600 text-white px-6 py-2 rounded-full font-bold shadow hover:bg-blue-700 transition"
-                >
-                    カメラを起動
-                </button>
-            </div>
-            ) : (
-                <BarcodeScanner
-                    onDetected={handleDetected}
-                    onCancel={() => setIsCameraActive(false)}
-                />
-            )}
-     </div>
-
-        {/* --- 手動入力 & 結果 --- */}
-        <div className="bg-white p-4 rounded-lg shadow-md">
-          <form onSubmit={handleManualSearch} className="flex gap-2 mb-4">
-            <input
-              type="text"
-              value={isbn}
-              onChange={(e) => setIsbn(e.target.value)}
-              placeholder="ISBN入力"
-              className="flex-1 border border-gray-300 rounded px-3 py-2"
+    <AppShell title="蔵書登録">
+      <div className="flex flex-col lg:flex-row gap-9 max-w-5xl">
+        {/* 左：スキャン／ISBN入力 */}
+        <div className="w-full lg:w-[360px] shrink-0 space-y-4">
+          {scan ? (
+            <BarcodeScanner
+              onDetected={(c: string) => {
+                setScan(false);
+                setIsbn(c);
+                fetchBook(c);
+              }}
+              onCancel={() => setScan(false)}
             />
+          ) : (
             <button
-              type="submit"
-              disabled={loading}
-              className="bg-gray-600 text-white px-4 py-2 rounded text-sm"
+              onClick={() => setScan(true)}
+              className="w-full h-[236px] rounded-2xl bg-ink text-paper/80 flex flex-col items-center justify-center gap-3 hover:text-paper transition"
             >
-              検索
+              <span className="w-[140px] h-[90px] border-2 border-white/35 rounded-lg" />
+              <span className="text-sm">ISBNバーコードをスキャン</span>
             </button>
-          </form>
+          )}
 
-          {loading && <div className="text-center py-2 text-sm animate-pulse">処理中...</div>}
-          {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
+          <div className="bg-surface border border-line rounded-2xl p-5">
+            <div className="text-sm text-muted mb-2.5">
+              または手動でISBNを入力
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                fetchBook(isbn);
+              }}
+              className="flex gap-2.5"
+            >
+              <input
+                value={isbn}
+                onChange={(e) => setIsbn(e.target.value)}
+                placeholder="9784..."
+                className="flex-1 bg-paper border border-line rounded-lg px-3.5 py-2.5 text-sm font-mono outline-none focus:border-aoyagi transition"
+              />
+              <button
+                type="submit"
+                disabled={loading}
+                className="bg-aoyagi text-white rounded-lg px-5 text-sm font-bold disabled:opacity-50"
+              >
+                検索
+              </button>
+            </form>
+          </div>
+        </div>
+
+        {/* 右：取得結果＋登録フォーム */}
+        <div className="flex-1 min-w-0 bg-surface border border-line rounded-2xl p-6 md:p-8">
+          {loading && <div className="text-muted animate-pulse">処理中...</div>}
+          {error && <div className="text-yamabuki text-sm">{error}</div>}
+          {!loading && !book && !error && (
+            <div className="text-muted text-sm py-8">
+              バーコードをスキャンするか、ISBNを入力してください。
+            </div>
+          )}
 
           {book && (
-            <div className="border-t pt-4 mt-2">
-              <div className="flex gap-3 mb-3">
-                {book.thumbnailUrl && <img src={book.thumbnailUrl} alt="" className="w-16 h-24 object-cover bg-gray-200" />}
-                <div>
-                  <h3 className="font-bold text-sm">{book.title}</h3>
-                  <p className="text-xs text-gray-600">{book.authors.join(', ')}</p>
-                  <p className="text-xs text-gray-400 mt-1">{book.isbn}</p>
+            <>
+              <div className="flex items-center gap-2.5 mb-5">
+                <span className="bg-leaf-soft text-aoyagi rounded-md px-3 py-1 text-xs font-bold">
+                  自動取得 ✓
+                </span>
+                <span className="text-sm text-muted">
+                  {book.source} から書誌情報を取得しました
+                </span>
+              </div>
+
+              <div className="flex gap-5 pb-6 mb-6 border-b border-line">
+                <BookCover
+                  title={book.title}
+                  src={book.thumbnailUrl}
+                  className="w-[84px] h-[118px] rounded-md shadow-sm shrink-0"
+                />
+                <div className="min-w-0">
+                  <div className="font-mincho text-xl leading-snug">
+                    {book.title}
+                  </div>
+                  <div className="text-sm text-ink-soft mt-1.5">
+                    {book.authors?.join("、")}
+                  </div>
+                  <div className="text-xs text-muted mt-1.5 font-mono">
+                    ISBN {book.isbn}
+                    {book.publisher ? ` ・ ${book.publisher}` : ""}
+                  </div>
+                  {book.duplicate && (
+                    <div className="mt-3 inline-flex items-center gap-1.5 bg-yamabuki-soft text-[#8A5A22] rounded-md px-3 py-1.5 text-xs">
+                      ⚠ 同じ本が既に登録されています
+                    </div>
+                  )}
                 </div>
               </div>
-              <div className="flex gap-2">
+
+              <div className="flex flex-col gap-5 mb-6">
+                <div className="max-w-[300px]">
+                  <div className="text-xs font-bold mb-2">ジャンル</div>
+                  <select
+                    value={genre}
+                    onChange={(e) => setGenre(e.target.value)}
+                    className="w-full bg-white border border-line rounded-lg px-3.5 py-2.5 text-sm"
+                  >
+                    {GENRES.map((g) => (
+                      <option key={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div className="text-xs font-bold mb-2">
+                    タグ <span className="text-muted font-normal">（任意）</span>
+                  </div>
+                  <input
+                    onKeyDown={addTag}
+                    placeholder="入力して Enter"
+                    className="bg-white border border-line rounded-lg px-3.5 py-2.5 text-sm w-full max-w-sm outline-none focus:border-aoyagi transition"
+                  />
+                  <div className="flex flex-wrap gap-2 mt-2.5">
+                    {tags.map((t, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1.5 bg-leaf-soft text-aoyagi rounded-md px-3 py-1.5 text-xs"
+                      >
+                        {t}
+                        <button
+                          onClick={() =>
+                            setTags((arr) => arr.filter((_, j) => j !== i))
+                          }
+                          className="text-aoyagi/60 hover:text-aoyagi"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3.5 justify-end border-t border-line pt-5">
                 <button
-                    onClick={() => { setBook(null);}}
-                    className="flex-1 bg-gray-200 py-2 rounded text-sm"
+                  onClick={() => setBook(null)}
+                  className="bg-white border border-line text-ink-soft rounded-[10px] px-7 py-3 text-sm font-bold"
                 >
-                    キャンセル
+                  キャンセル
                 </button>
                 <button
-                    onClick={handleRegister}
-                    className="flex-1 bg-green-600 text-white py-2 rounded text-sm font-bold"
+                  onClick={register}
+                  className="bg-aoyagi text-white rounded-[10px] px-9 py-3 text-sm font-bold hover:bg-aoyagi-dark transition"
                 >
-                    登録する
+                  登録する
                 </button>
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>
+    </AppShell>
   );
 }

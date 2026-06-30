@@ -22,7 +22,7 @@ const serviceAccountAuth = new JWT({
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { isbn, title, authors, publishedDate, thumbnailUrl } = body;
+    const { isbn, title, authors, publishedDate, thumbnailUrl, genre, tags, publisher } = body;
 
     if (!isbn || !title) {
       return NextResponse.json({ error: '必須項目が不足しています' }, { status: 400 });
@@ -52,6 +52,9 @@ export async function POST(req: NextRequest) {
       title: title,
       authors: Array.isArray(authors) ? authors.join(', ') : authors,
       publishedDate: publishedDate,
+      publisher: publisher || '',                                   // ★ 追加
+      genre: genre || '',                                           // ★ 追加
+      tags: Array.isArray(tags) ? tags.join(', ') : (tags || ''),   // ★ 追加（カンマ区切り保存）
       image: thumbnailUrl,
       status: 'available', // 初期ステータスは「在庫あり」
       registeredAt: new Date().toISOString(),
